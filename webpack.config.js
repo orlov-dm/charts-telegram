@@ -60,7 +60,7 @@ module.exports = {
   watchOptions: {
     aggregateTimeout: 300 // The default
   },
-  devtool: "source-map",
+  devtool: "inline-source-map",
   /*plugins: [
   ]*/
 };
