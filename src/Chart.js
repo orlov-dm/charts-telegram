@@ -11,7 +11,7 @@ const AREA_BOTTOM_PREVIEW = 3;
 const AREA_LEFT = 4;
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
+const MIN_RANGE = 5;
 
 (function() {
   var requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame ||
@@ -46,6 +46,9 @@ export default class Chart {
       this.props = props;
       this.points = {};
       this.mouse = {x: 0, y: 0, down: false, downLeft: false, downRight: false};
+
+      this.dx = 0;
+      this.dy = 0;
     }
 
     init() {
@@ -85,8 +88,37 @@ export default class Chart {
       }
     }
 
+    animate(x, y, msec) {
+      this.dx = x;
+      this.dy = y;
+      const timeStart = Date.now();
+      if (this.intId) {
+        clearInterval(this.intId);
+      }
+      console.log('Int msec ' + msec/10);
+      const xPart = Math.floor(this.dx/10);
+      const yPart = Math.floor(this.dy/10);
+      this.intId = setInterval(() => {
+        this.animationInProgress = true;
+        console.log('start');
+        if (Date.now() - timeStart > msec) {
+          console.log('stop');
+          this.dx = 0;
+          this.dy = 0;
+          this.animationInProgress = false;
+          window.requestAnimationFrame(this.render.bind(this));
+          clearInterval(this.intId);
+          return;
+        }
+        console.log('Int frame');
+        this.dx -= xPart;
+        this.dy -= yPart;
+        window.requestAnimationFrame(this.render.bind(this));
+      }, msec/10);
+    }
+
     render() {
-      console.log(this.props.xRange);
+      //console.log(this.props.xRange);
       this.ctx.save();
       this.ctx.clearRect(0, 0, this.ctx.canvas.clientWidth, this.ctx.canvas.clientHeight);
       this.points = {};
@@ -118,26 +150,78 @@ export default class Chart {
     }
 
     renderBottomLabels() {
-      const {x:xPoints} = this.getPoints();
+      const { x: xPoints } = this.props.columns;
       const ctx = this.ctx;
 
       const [[x1,y1], [x2,y2]] = this.getAreaPos(AREA_BOTTOM);
 
-      const width = x2-x1;
+      const X_DISTANCE = 50;
 
-      const X_DISTANCE = 100;
-      let count = width / X_DISTANCE;
-      count = count - count%4;
-      const points = xPoints.length;
-      const pointsInterval = Math.floor(points / count);
-      const pointsDistance = width / count;
+      const [xBegin, xEnd] = this.props.xRange;
+      
+      const width = x2-x1;
+      const fullWidth = Math.floor(width * (100/(xEnd-xBegin)));
+      const count = Math.floor(fullWidth/X_DISTANCE);
+      const pointsDistance = fullWidth / xPoints.length;
       const startX = pointsDistance / 2;
       const startY = y1 + 20;
-      const options = { month: 'short', day: 'numeric' };
-      for (let i = pointsInterval, j = 0; i < xPoints.length - 1; i += pointsInterval, ++j) {
+      const xLeft = Math.floor(fullWidth * xBegin / 100);
+      const xDiff = 0 - xLeft;
+      let prevX = 0;
+      for (let i = 0, j = 0; i < xPoints.length - 1; i += 1) {
         const time = xPoints[i];
-        ctx.fillText(dateConverter(time), Math.floor(startX+pointsDistance*j), startY);
+
+        const resX = Math.floor(startX + pointsDistance*i + xDiff);
+        if (resX < x1 || resX > x2) {
+          continue;
+        }
+        if (prevX && (resX - prevX) < X_DISTANCE) {
+          continue;
+        }
+        prevX = resX;
+        j++;
+        ctx.fillText(dateConverter(time), resX, startY);
       }
+
+
+      // const [xBegin, xEnd] = this.props.xRange;
+      // const fullWidth = Math.floor(width * (100/(xEnd-xBegin)));
+      // const X_DISTANCE = 50;
+      // const count = Math.floor(width/X_DISTANCE);
+      // let pointsDistance = Math.floor(fullWidth / count);
+      // const distanceMultiplier = Math.pow(2, Math.floor(pointsDistance/X_DISTANCE) - 1);
+      // let pointsInterval = Math.floor(xPoints.length / count / distanceMultiplier);
+      // pointsDistance = pointsDistance - X_DISTANCE * (distanceMultiplier -1 );
+      // console.log(pointsDistance, pointsInterval);
+
+      // if (!pointsInterval) {
+      //   pointsInterval = 1;
+      // }
+
+      // const xLeft = Math.floor(fullWidth * xBegin / 100);
+      // const xRight = Math.floor(fullWidth * xEnd / 100);
+      // const xDiff = 0 - xLeft;
+      // const startX = pointsDistance / 2;
+      // const startY = y1 + 20;
+      // for (let i = pointsInterval, j = 0; i < xPoints.length - 1; i += pointsInterval, ++j) {
+      //   const time = xPoints[i];
+      //   const resX = Math.floor(startX + pointsDistance*j + xDiff);
+      //   if (resX < x1 || resX > x2) {
+      //     continue;
+      //   }
+      //   ctx.fillText(dateConverter(time), resX, startY);
+      // }
+      // let count = width / X_DISTANCE;
+      // count = count - count%4;
+      // const points = xPoints.length;
+      // const pointsInterval = Math.floor(points / count);
+      // const pointsDistance = width / count;
+      // const startX = pointsDistance / 2;
+      // const startY = y1 + 20;
+      // for (let i = pointsInterval, j = 0; i < xPoints.length - 1; i += pointsInterval, ++j) {
+      //   const time = xPoints[i];
+      //   ctx.fillText(dateConverter(time), Math.floor(startX+pointsDistance*j), startY);
+      // }
     }
 
     renderSideLabels() {
@@ -185,12 +269,14 @@ export default class Chart {
         ctx.beginPath();
         ctx.strokeStyle = colors[yName];
         line.forEach((y, i) => {
+          const xPoint = Math.floor(i*pointsDistance);
+          const yPoint = Math.floor(startY-y*pointsYDistance);
           if (!i) {
             ctx.strokeStyle = colors[y];
-            ctx.moveTo(Math.floor(i*pointsDistance), Math.floor(startY-y*pointsYDistance));
+            ctx.moveTo(xPoint, yPoint + this.dy);
             return;
           }
-          ctx.lineTo(Math.floor(i*pointsDistance), Math.floor(startY-y*pointsYDistance));
+          ctx.lineTo(xPoint, yPoint + this.dy);
         });
         ctx.stroke();
       });
@@ -249,7 +335,7 @@ export default class Chart {
 
       if (!isPreview && !xRange != [0, 100]) {
         const [xBegin, xEnd] = xRange;
-        const xPointsMultiplier = xPoints.length / 100
+        const xPointsMultiplier = xPoints.length / 100;
         const start = Math.floor(xBegin*xPointsMultiplier);
         const end = Math.floor(xEnd*xPointsMultiplier);
         xPoints = xPoints.slice(start, end);
@@ -317,7 +403,7 @@ export default class Chart {
 
     mouseUp( event ){
       this.mouse.down = false;
-      console.log('mouse up');
+      //console.log('mouse up');
     }
 
     mouseMove ( event ){
@@ -330,7 +416,7 @@ export default class Chart {
       const movePoints = this.mouse.x - x; 
       const [[x1,y1],[x2,y2]] = this.getAreaPos(AREA_BOTTOM_PREVIEW);
       const rel = (x2-x1)/100;
-      const newXRangeDiff = toLeft ? Math.floor(movePoints/rel) : Math.ceil(movePoints/rel);
+      const newXRangeDiff = toLeft ? Math.round(movePoints/rel) : Math.round(movePoints/rel);
       if (!newXRangeDiff) {
         return;
       }
@@ -338,7 +424,9 @@ export default class Chart {
       this.mouse.y = y;
       const [xBegin, xEnd] = this.props.xRange;
       const xRangeDistance = this.mouse.down === 'center' ? xEnd - xBegin : 0;
-    
+      if ((x < x1 && xBegin === 0)|| (x > x2 && xEnd === 100)) {
+        return;
+      }
 
       let newXRangeLeft = xBegin;
       let newXRangeRight = xEnd;
@@ -351,11 +439,11 @@ export default class Chart {
         }
         const newXRange = toLeft ? xBegin - newXRangeDiff : xEnd - newXRangeDiff;
         if (toLeft && newXRange < xBegin) {
-          console.log('Move to left ' + newXRange + ' ' + xBegin);
+          //console.log('Move to left ' + newXRange + ' ' + xBegin);
           newXRangeLeft = newXRange;
           newXRangeRight = xRangeDistance ? newXRange + xRangeDistance : xEnd;
         } else if (!toLeft && newXRange > xEnd) {
-          console.log('Move to right ' + newXRange + ' ' + xEnd);
+          //console.log('Move to right ' + newXRange + ' ' + xEnd);
           newXRangeLeft = xRangeDistance ? newXRange - xRangeDistance : xBegin;
           newXRangeRight = newXRange;
         } else {
@@ -373,33 +461,22 @@ export default class Chart {
         newXRangeLeft = this.mouse.down === 'left' ? (xBegin - newXRangeDiff) : xBegin;
         newXRangeRight = this.mouse.down === 'right' ? (xEnd - newXRangeDiff) : xEnd;
 
-        if (newXRangeRight - newXRangeLeft < 20) {
+        if (newXRangeRight - newXRangeLeft < MIN_RANGE) {
           return;
-          console.log('norm to 20');
-          if (toLeft) {
-            newXRangeRight = newXRangeLeft + 20;
-          } else {
-            newXRangeLeft = newXRangeRight - 20;
-          }
         }
       }
 
       if (newXRangeLeft < 0) {
         return;
-        console.log('norm to 0');
-
-        newXRangeLeft = 0;
       }
       if (newXRangeRight > 100) {
         return;
-        console.log('norm to 100');
-
-        newXRangeRight = 100;
       }
       if (newXRangeLeft !== xBegin || newXRangeRight !== xEnd) { 
-        console.log(newXRangeLeft, newXRangeRight);
+        //console.log(newXRangeLeft, newXRangeRight);
         this.props.xRange = [newXRangeLeft, newXRangeRight];
-        window.requestAnimationFrame(this.render.bind(this));
+        this.animate(-10, -10, 100);
+        //window.requestAnimationFrame(this.render.bind(this));
       }
     }
 };
